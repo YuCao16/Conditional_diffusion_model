@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 **/*.onnx
+**/*.png.pdf
 
 # C extensions
 *.so
