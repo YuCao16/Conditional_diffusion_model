@@ -177,8 +177,9 @@ x: torch.Tensor = torch.ones((256, 1, 28, 28))
 t: torch.Tensor = torch.ones((256))
 c: torch.Tensor = torch.randint_like(t, high=10, dtype=torch.int64)
 mask: torch.Tensor = torch.bernoulli(torch.zeros_like(c) + 0.1)
+torch.caoyu()
 
-y = model(x, c, t, mask)  # output size (256, 1, 28, 28)
+# y = model(x, c, t, mask)  # output size (256, 1, 28, 28)
 
 # ----------------------------------
 # Model Visualization using Netron

@@ -88,7 +88,7 @@ class UnetUp(nn.Module):
         self.model = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
-        x = torch.cat((x, skip), 1)
+        x = torch.cat((x, skip), dim=1)
         x = self.model(x)
         return x
 
@@ -197,7 +197,9 @@ class ContextUnet(nn.Module):
         return out
 
 
-def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict:
+def ddpm_schedules(
+    beta1: float, beta2: float, T: int
+) -> Dict[str, torch.Tensor]:
     """
     Returns pre-computed schedules for DDPM sampling, training process.
     """
@@ -261,9 +263,11 @@ class DDPM(nn.Module):
         noise = torch.randn_like(x)  # eps ~ N(0, 1)
 
         # x with t embedding
+        assert isinstance(self.sqrtab, torch.Tensor)
+        assert isinstance(self.sqrtmab, torch.Tensor)
         x_t = (
-            self.sqrtab[_ts, None, None, None] * x  # pyright:ignore
-            + self.sqrtmab[_ts, None, None, None] * noise  # pyright:ignore
+            self.sqrtab[_ts, None, None, None] * x
+            + self.sqrtmab[_ts, None, None, None] * noise
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
 
@@ -309,7 +313,7 @@ class DDPM(nn.Module):
         x_i_store = (
             []
         )  # keep track of generated steps in case want to plot something
-        print()
+
         for i in range(self.n_T, 0, -1):
             print(f"sampling timestep {i}", end="\r")
             t_is = torch.tensor([i / self.n_T]).to(device)
@@ -327,6 +331,10 @@ class DDPM(nn.Module):
             eps2 = eps[n_sample:]
             eps = (1 + guide_w) * eps1 - guide_w * eps2
             x_i = x_i[:n_sample]
+
+            assert isinstance(self.oneover_sqrta, torch.Tensor)
+            assert isinstance(self.mab_over_sqrtmab, torch.Tensor)
+            assert isinstance(self.sqrt_beta_t, torch.Tensor)
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
@@ -383,10 +391,13 @@ def train_mnist() -> None:
 
         pbar = tqdm(dataloader)
         loss_ema = None
+
+        c: torch.Tensor = torch.tensor([])
+        x: torch.Tensor = torch.tensor([])
         for x, c in pbar:
             optim.zero_grad()
             x = x.to(device)
-            c: torch.Tensor = c.to(device)
+            c = c.to(device)
             loss = ddpm(x, c)
             loss.backward()
             if loss_ema is None:
@@ -401,23 +412,22 @@ def train_mnist() -> None:
         ddpm.eval()
         with torch.no_grad():
             n_sample = 4 * n_classes
-            for w_i, w in enumerate(ws_test):
+            for _, w in enumerate(ws_test):
                 x_gen, x_gen_store = ddpm.sample(
                     n_sample, (1, 28, 28), device, guide_w=w
                 )
 
                 # append some real images at bottom, order by class also
                 x_real = torch.Tensor(x_gen.shape).to(device)
-                k: int
                 for k in range(n_classes):
                     for j in range(int(n_sample / n_classes)):
                         try:
-                            idx = torch.squeeze(
-                                (c == k).nonzero()  # pyright: ignore
-                            )[j]
+                            # assert not isinstance(c, None)
+                            assert isinstance(c, torch.Tensor)
+                            idx = torch.squeeze((c == k).nonzero())[j]
                         except Exception:
                             idx = 0
-                        x_real[k + (j * n_classes)] = x[idx]  # pyright:ignore
+                        x_real[k + (j * n_classes)] = x[idx]
 
                 x_all = torch.cat([x_gen, x_real])
                 grid = make_grid(x_all * -1 + 1, nrow=10)
