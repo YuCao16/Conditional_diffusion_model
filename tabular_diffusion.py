@@ -1,15 +1,20 @@
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Tuple, Union
 
-import matplotlib.pyplot as plt
-import numpy as np
+# import matplotlib.pyplot as plt
+# import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-from matplotlib.animation import FuncAnimation, PillowWriter
+
+# from matplotlib.animation import FuncAnimation, PillowWriter
 from torch.utils.data import DataLoader
-from torchvision import transforms
-from torchvision.datasets import MNIST
-from torchvision.utils import make_grid, save_image
+
+# from torchvision import transforms
+# from torchvision.datasets import MNIST
+# from torchvision.utils import make_grid, save_image
 from tqdm import tqdm
+
+from tabular_dataset import Dataset
 
 
 class ResidualConvBlock(nn.Module):
@@ -225,11 +230,10 @@ class DDPM(nn.Module):
 
     def sample(
         self, n_sample: int, size: Union[torch.Size, Tuple], device: str
-    ) -> Tuple[torch.Tensor, np.ndarray]:
+    ) -> torch.Tensor:
 
         # x_T ~ N(0, 1), sample initial noise
         x_i = torch.randn(n_sample, *size).to(device)
-        x_i_store = []  # keep track of generated steps
 
         for i in range(self.n_T, 0, -1):
             print(f"sampleing timestep {i}", end="\r")
@@ -242,33 +246,89 @@ class DDPM(nn.Module):
             eps = self.nn_model(x_i, t_is)
             x_i = x_i[:n_sample]
 
-            assert isinstance(self.oneover_sqrta, torch.Tensor)
             assert isinstance(self.mab_over_sqrtmab, torch.Tensor)
+            assert isinstance(self.oneover_sqrta, torch.Tensor)
             assert isinstance(self.sqrt_beta_t, torch.Tensor)
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
             )
-            if i % 20 == 0 or i == self.n_T or i < 8:
-                x_i_store.append(x_i.detach().cpu().numpy())
 
-        x_i_store = np.array(x_i_store)
-        return x_i, x_i_store
+        return x_i
 
 
 def train_tabular() -> None:
-    pass
+
+    # hardcoding these here
+    dataset_path = "./higgs.csv"
+    n_epoch = 20
+    batch_size = 256
+    n_T = 400
+    device = "cuda:0"
+    n_feat = 128
+    lrate = 1e-4
+    save_model = True
+    save_dir = "./data/tabular_diffusion_outputs/"
+
+    ddpm = DDPM(
+        nn_model=ContextUnet(1, n_feat),
+        betas=(1e-4, 0.02),
+        n_T=n_T,
+        device=device,
+    )
+    ddpm.to(device)
+
+    dataset = Dataset(dataset_path)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
+    optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
+
+    for ep in range(n_epoch):
+        print(f"epoch {ep}")
+        ddpm.train()
+
+        # linear lrate decay
+        optim.param_groups[0]["lr"] = lrate * (1 - ep / n_epoch)
+
+        pbar = tqdm(dataloader)
+        loss_ema = None
+
+        x: torch.Tensor = torch.tensor([])
+
+        for x in pbar:
+            optim.zero_grad()
+            x = x.to(device)
+            loss = ddpm(x)
+            loss.backward(0)
+            if loss_ema is None:
+                loss_ema = loss.item()
+            else:
+                loss_ema = 0.95 * loss_ema + 0.05 * loss.item(0)
+            pbar.set_description(f"loss: {loss_ema:.4f}")
+            optim.step()
+
+        ddpm.eval()
+        with torch.no_grad():
+            n_sample = 100
+            x_gen = ddpm.sample(n_sample, (1, 28), device)
+            pd.DataFrame(x_gen.detach().cpu().numpy()).to_csv(
+                f"{save_dir}tabular_ep{ep}.csv"
+            )
+            print(f"saved tabular at {save_dir}" + f"tabular_ep{ep}.csv")
+
+        if save_model and ep == int(n_epoch - 1):
+            torch.save(ddpm.state_dict(), f"{save_dir}model_{ep}.pth")
+            print(f"saved model at {save_dir}" + f"model_{ep}.pth")
 
 
-# if __name__ == "__main__":
-# train_tabular()
+if __name__ == "__main__":
+    train_tabular()
 
 
-x: torch.Tensor = torch.ones((256, 1, 28))
-t: torch.Tensor = torch.ones((256))
-
-model_unet = ContextUnet(1, 256)
-model = DDPM(model_unet, betas=(1e-4, 0.02), n_T=400, device="cpu")
-y, y_store = model.sample(10, (1, 28), "cpu")
-print(y_store[0])
+# x: torch.Tensor = torch.ones((256, 1, 28))
+# t: torch.Tensor = torch.ones((256))
+#
+# model_unet = ContextUnet(1, 256)
+# model = DDPM(model_unet, betas=(1e-4, 0.02), n_T=400, device="cpu")
+# y = model.sample(10, (1, 28), "cpu")
+# print(y[0])
 # y = model(x)
