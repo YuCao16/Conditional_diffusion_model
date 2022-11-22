@@ -168,9 +168,7 @@ class ContextUnet(nn.Module):
         hiddenvec = self.to_vec(down2)
 
         # convert context to one hot embedding
-        c = nn.functional.one_hot(c, num_classes=self.n_classes).type(
-            torch.float
-        )
+        c = nn.functional.one_hot(c, num_classes=self.n_classes).type(torch.float)
 
         # mask out context if context_mask == 1
         context_mask = context_mask[:, None]
@@ -189,25 +187,19 @@ class ContextUnet(nn.Module):
 
         up1 = self.up0(hiddenvec)
         # up2 = self.up1(up1, down2) # if want to avoid add and multiply embeddings
-        up2 = self.up1(
-            cemb1 * up1 + temb1, down2
-        )  # add and multiply embeddings
+        up2 = self.up1(cemb1 * up1 + temb1, down2)  # add and multiply embeddings
         up3 = self.up2(cemb2 * up2 + temb2, down1)
         out = self.out(torch.cat((up3, x), 1))
         return out
 
 
-def ddpm_schedules(
-    beta1: float, beta2: float, T: int
-) -> Dict[str, torch.Tensor]:
+def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
     """
     Returns pre-computed schedules for DDPM sampling, training process.
     """
     assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
-    beta_t = (beta2 - beta1) * torch.arange(
-        0, T + 1, dtype=torch.float32
-    ) / T + beta1
+    beta_t = (beta2 - beta1) * torch.arange(0, T + 1, dtype=torch.float32) / T + beta1
     sqrt_beta_t = torch.sqrt(beta_t)
     alpha_t = 1 - beta_t
     log_alpha_t = torch.log(alpha_t)
@@ -277,9 +269,7 @@ class DDPM(nn.Module):
         )
 
         # return MSE between added noise, and our predicted noise
-        return self.loss_mse(
-            noise, self.nn_model(x_t, c, _ts / self.n_T, context_mask)
-        )
+        return self.loss_mse(noise, self.nn_model(x_t, c, _ts / self.n_T, context_mask))
 
     def sample(
         self,
@@ -310,9 +300,7 @@ class DDPM(nn.Module):
         context_mask = context_mask.repeat(2)
         context_mask[n_sample:] = 1.0  # makes second half of batch context free
 
-        x_i_store = (
-            []
-        )  # keep track of generated steps in case want to plot something
+        x_i_store = []  # keep track of generated steps in case want to plot something
 
         for i in range(self.n_T, 0, -1):
             print(f"sampling timestep {i}", end="\r")
@@ -377,9 +365,7 @@ def train_mnist() -> None:
     )  # mnist is already normalised 0 to 1
 
     dataset = MNIST("./data", train=True, download=True, transform=tf)
-    dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=True, num_workers=5
-    )
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
     for ep in range(n_epoch):
@@ -458,9 +444,7 @@ def train_mnist() -> None:
                                 # plots.append(axs[row, col].imshow(x_gen_store[i,(row*n_classes)+col,0],cmap='gray'))
                                 plots.append(
                                     axs[row, col].imshow(
-                                        -x_gen_store[
-                                            i, (row * n_classes) + col, 0
-                                        ],
+                                        -x_gen_store[i, (row * n_classes) + col, 0],
                                         cmap="gray",
                                         vmin=(-x_gen_store[i]).min(),
                                         vmax=(-x_gen_store[i]).max(),
